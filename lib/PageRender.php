@@ -700,12 +700,28 @@ class PageRender extends Visitor {
 		if (DEBUGTMP) printf('<font size=-2>%s</font><br />',__METHOD__);
 
 		if ($attribute->getValue($i)) {
+			printf('<table borders="0"><tbody><tr><td>');
 			$this->draw('FormReadOnlyValue',$attribute,$i);
 
-			if (! $attribute->isReadOnly() && $_SESSION[APPCONFIG]->isCommandAvailable('script','delete_attr'))
-				printf('<a href="javascript:deleteAttribute(\'%s\',\'%s\',\'%s\');" style="color:red;"><img src="%s/trash.png" alt="Trash" /> %s</a>',
-					$attribute->getName(),$attribute->getFriendlyName(),$i,IMGDIR,_('delete attribute'));
+			if (!$attribute->isReadOnly()) {
+				printf('</td><td>&nbsp;&nbsp;&nbsp;&nbsp;</td><td valign="top">');
 
+				if ($_SESSION[APPCONFIG]->isCommandAvailable('script','delete_attr'))
+					printf('<input type="checkbox" name="deleted_values[%s][%s]" onchange="var e=document.getElementById(\'new_values_%s_%s\'); e.style.display=this.checked? \'none\': \'inline\'; e.disabled=this.checked;" />%s<br />',
+						htmlspecialchars($attribute->getName()), $i,
+						htmlspecialchars($attribute->getName()), $i,
+						_('delete attribute'));
+
+				printf('<input type="file" class="value" name="new_values[%s][%s]" id="new_values_%s_%s" value="" %s%s %s %s/><br />',
+					htmlspecialchars($attribute->getName()),$i,
+					htmlspecialchars($attribute->getName()),$i,
+					$attribute->needJS('focus') ? sprintf('onfocus="focus_%s(this);" ',$attribute->getName()) : '',
+					$attribute->needJS('blur') ? sprintf('onblur="blur_%s(this);" ',$attribute->getName()) : '',
+					($attribute->getSize() > 0) ? 'size="'.$attribute->getSize().'"' : '',
+					($attribute->getMaxLength() > 0) ? 'maxlength="'.$attribute->getMaxLength().'"' : '');
+			}
+
+			printf('</td></tr></tbody></table>');
 		} else {
 			printf('<input type="file" class="value" name="new_values[%s][%s]" id="new_values_%s_%s" value="" %s%s %s %s/><br />',
 				htmlspecialchars($attribute->getName()),$i,

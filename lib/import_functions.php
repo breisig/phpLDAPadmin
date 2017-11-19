@@ -84,7 +84,7 @@ abstract class Import {
 
 	public function accept() {
 		if (get_request('ldif','REQUEST')) {
-			$this->input = explode("\n",get_request('ldif','REQUEST'));
+			$this->input = preg_split("/\n|\r\n|\r/",get_request('ldif','REQUEST'));
 			$this->source['name'] = 'STDIN';
 			$this->source['size'] = strlen(get_request('ldif','REQUEST'));
 
@@ -414,7 +414,10 @@ class ImportLDIF extends Import {
 		foreach ($lines as $line) {
 			list($attr,$value) = $this->getAttrValue($line, true, true);
 
-			if ($value !== false)
+			if ($value !== false) {
+				if (preg_match('/^(.+);binary(;.*|)$/i', $attr, $m))
+					$attr = $m[1] . $m[2];
+
 				if (is_null($attribute = $this->template->getAttribute($attr))) {
 					$attribute = $this->template->addAttribute($attr,array('values'=>array($value)));
 					$attribute->justModified();
@@ -424,6 +427,7 @@ class ImportLDIF extends Import {
 						$attribute->addValue($value);
 					else
 						$attribute->setValue(array($value));
+			}
 		}
 	}
 
@@ -450,6 +454,9 @@ class ImportLDIF extends Import {
 
 			if (! in_array($action_attribute,array('add','delete','replace')))
 				return $this->error(_('Missing modify command add, delete or replace'),array_merge(array($currentLine),$lines));
+
+			if (preg_match('/^(.+);binary(;.*|)$/i', $action_attribute_value, $m))
+				$action_attribute_value = $m[1] . $m[2];
 
 			$processline = true;
 			switch ($action_attribute) {
@@ -495,6 +502,9 @@ class ImportLDIF extends Import {
 
 					if ($attribute_value_part === false)
 						return false;
+
+					if (preg_match('/^(.+);binary(;.*|)$/i', $attr, $m))
+						$attr = $m[1] . $m[2];
 
 					# Check that it correspond to the one specified before
 					if ($attr == $action_attribute_value) {

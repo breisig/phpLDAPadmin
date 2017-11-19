@@ -388,14 +388,14 @@ class ldap extends DS {
 
 			# Iterate over the entries
 			foreach ($entries as $a => $entry) {
-				if (! isset($entry['dn']))
-					debug_dump_backtrace('No DN?',1);
-
 				# Remove the none entry references.
 				if (! is_array($entry)) {
 					unset($entries[$a]);
 					continue;
 				}
+
+				if (! isset($entry['dn']))
+					debug_dump_backtrace('No DN?',1);
 
 				$dn = $entry['dn'];
 				unset($entry['dn']);
@@ -411,6 +411,14 @@ class ldap extends DS {
 					# Remove the count
 					if (isset($entry[$b]['count']))
 						unset($entry[$b]['count']);
+
+					# Strip ";binary" option.
+					if (preg_match('/^(.*);binary(;.*|)$/i',
+					    $b, $m)) {
+						$newb = $m[1] . $m[2];
+						$entry[$newb] = $entry[$b];
+						unset($entry[$b]);
+					}
 				}
 
 				# Our queries always include the DN (the only value not an array).
@@ -769,6 +777,21 @@ class ldap extends DS {
 	}
 
 	/**
+	 * Set ';binary' option where needed.
+	 */
+	protected function setBinary($attrs) {
+		if (is_array($attrs))
+			foreach ($attrs as $name => $attr)
+				if (!preg_match('/;binary(;.*|)$/i', $name))
+					if ($this->isAttrBinary($name)) {
+						$attrs[$name . ';binary'] = $attr;
+						unset($attrs[$name]);
+					}
+
+		return $attrs;
+	}
+
+	/**
 	 * Modify attributes of a DN
 	 */
 	public function modify($dn,$attrs,$method=null) {
@@ -776,7 +799,7 @@ class ldap extends DS {
 			debug_log('Entered (%%)',17,0,__FILE__,__LINE__,__METHOD__,$fargs);
 
 		# We need to supress the error here - programming should detect and report it.
-		return @ldap_mod_replace($this->connect($method),$dn,$attrs);
+		return @ldap_mod_replace($this->connect($method),$dn,$this->setBinary($attrs));
 	}
 
 	/**
