@@ -235,8 +235,11 @@ class Attribute {
 			$i = $this->getValueCount();
 
 		$old_val = $this->getValue($i);
-		if (is_null($old_val) || ($old_val != $new_val))
+		if (is_null($old_val) || ($old_val != $new_val)) {
+			if (!$this->hasBeenModified())
+				$this->oldvalues = $this->values;
 			$this->justModified();
+		}
 
 		$this->values[$i] = $new_val;
 	}
