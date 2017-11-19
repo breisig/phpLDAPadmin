@@ -169,13 +169,14 @@ class ImportLDIF extends Import {
 
 			# If we have a version line.
 			if (! $haveVersion && preg_match('/^version:/',$lines[0])) {
-				list($text,$version) = $this->getAttrValue(array_shift($lines));
+				list($text,$version) = $this->getAttrValue(array_shift($lines), false);
 
 				if ($version != 1)
-					return $this->error(sprintf('%s %s',_('LDIF import only suppports version 1'),$version),$lines);
+					return $this->error(sprintf('%s %s',_('LDIF import only supports version 1'),$version),$lines);
 
 				$haveVersion = true;
-				$lines = $this->nextLines();
+				if (!$lines)
+					$lines = $this->nextLines();
 			}
 
 			$server = $this->getServer();
@@ -186,7 +187,7 @@ class ImportLDIF extends Import {
 
 				# The second line should be our changetype
 				if (preg_match('/^changetype:[ ]*(delete|add|modrdn|moddn|modify)/i',$lines[0])) {
-					$attrvalue = $this->getAttrValue($lines[0]);
+					$attrvalue = $this->getAttrValue($lines[0], false);
 					$changetype = $attrvalue[1];
 					array_shift($lines);
 
@@ -248,14 +249,46 @@ class ImportLDIF extends Import {
 	/**
 	 * Get the Attribute and Decoded Value
 	 */
-	private function getAttrValue($line) {
-		list($attr,$value) = explode(':',$line,2);
+	private function getAttrValue($line, $useBase64 = true, $useUrl = false) {
+		$m = explode(':',$line,2);
 
-		# Get the DN
-		if (substr($value,0,1) == ':')
+		if (!isset($m[1])) {
+			$this->error(_('Invalid Attribute definition'),$line);
+			return array($line, false);
+		}
+
+		list($attr,$value) = $m;
+
+		# Translate the value.
+		if ($useBase64 && substr($value,0,1) == ':')
 			$value = base64_decode(trim(substr($value,1)));
-		else
-			$value = trim($value);
+		else if ($useUrl && substr($value,0,1) == '<') {
+			$url = trim(substr($value,1));
+
+			/* WARNING/TODO: URL importation is unsafe because it may reveal ANY readable server file content */
+			if (!defined('PLA_UNSAFE'))
+				$value = $this->error(_('LDIF URL importation is not supported'),$value);
+			else if (!preg_match('#^file://#',$url))
+				$value = $this->error(_('The url attribute value should begin with file:// for'),$value);
+			else if (($sb = stat($filename = substr($url,7))) && isset($sb['mode']) && ($sb['mode'] & 0170000) != 0100000) {
+				/* If the file exists, it must be a (link to a) regular file. */
+				$value = $this->error(_('URL is not a regular file'),$value);
+			} else {
+				if (!($fh = @fopen($filename,'rb')))
+					$this->error(_('Unable to open file for'),$value);
+				else {
+					if (($data = @fread($fh,filesize($filename))) === false)
+						$this->error(_('Unable to read file for '),$value);
+					else
+						$value = $data;
+
+					@fclose($fh);
+				}
+			}
+
+		# It's a string
+		} else
+			$value = ltrim($value);
 
 		return array($attr,$value);
 	}
@@ -271,7 +304,7 @@ class ImportLDIF extends Import {
 
 		if ($this->hasMoreEntries() && ! $this->eof()) {
 			# The first line is the DN one
-			$current[0]= trim($this->_currentLine);
+			$current[0]= $this->_currentLine;
 
 			# While we end on a blank line, fetch the attribute lines
 			$count = 0;
@@ -279,14 +312,10 @@ class ImportLDIF extends Import {
 				# Fetch the next line
 				$this->nextLine();
 
-				/* If the next line begin with a space, we append it to the current row
-				 * else we push it into the array (unwrap)*/
-				if ($this->isWrappedLine())
-					$current[$count] .= trim($this->_currentLine);
-				elseif ($this->isCommentLine()) {}
+				if ($this->isCommentLine()) {}
 				# Do nothing
 				elseif (! $this->isBlankLine())
-					$current[++$count] = trim($this->_currentLine);
+					$current[++$count] = $this->_currentLine;
 				else
 					$endEntryFound = true;
 			}
@@ -312,11 +341,8 @@ class ImportLDIF extends Import {
 				# Do nothing
 				$this->nextLine();
 
-			} else {
-				$this->_currentDnLine = $this->_currentLine;
-				$this->dnLineNumber = $this->_currentLineNumber;
+			} else
 				$entry_found = true;
-			}
 		}
 
 		return $entry_found;
@@ -328,6 +354,12 @@ class ImportLDIF extends Import {
 	private function nextLine() {
 		$this->_currentLineNumber++;
 		$this->_currentLine = array_shift($this->input);
+
+		// Unfold here: comments may be folded too (RFC2849, note 2, page 6).
+		while ($this->isWrappedLine()) {
+			$this->_currentLineNumber++;
+			$this->_currentLine .= substr(array_shift($this->input), 1);
+		}
 	}
 
 	/**
@@ -345,7 +377,7 @@ class ImportLDIF extends Import {
 	 * @return boolean true if it's a wrapped line,false otherwise
 	 */
 	private function isWrappedLine() {
-		return substr($this->_currentLine,0,1) == ' ' ? true : false;
+		return $this->_currentLine != '' && !$this->eof() && substr($this->input[0], 0, 1) == ' ';
 	}
 
 	/**
@@ -376,53 +408,22 @@ class ImportLDIF extends Import {
 	}
 
 	/**
-	 * Method to retrieve the attribute value of a ldif line,
-	 * and get the base 64 decoded value if it is encoded
-	 */
-	private function getAttributeValue($value) {
-		$return = '';
-
-		if (substr($value,0,1) == '<') {
-			$url = trim(substr($value,1));
-
-			if (preg_match('^file://',$url)) {
-				$filename = substr(trim($url),7);
-
-				if ($fh = @fopen($filename,'rb')) {
-					if (! $return = @fread($fh,filesize($filename)))
-						return $this->error(_('Unable to read file for'),$value);
-
-					@fclose($fh);
-
-				} else
-					return $this->error(_('Unable to open file for'),$value);
-
-			} else
-				return $this->error(_('The url attribute value should begin with file:// for'),$value);
-
-		# It's a string
-		} else
-			$return = $value;
-
-		return trim($return);
-	}
-
-	/**
 	 * Build the attributes array when the change type is add.
 	 */
 	private function getAddDetails($lines) {
 		foreach ($lines as $line) {
-			list($attr,$value) = $this->getAttrValue($line);
+			list($attr,$value) = $this->getAttrValue($line, true, true);
 
-			if (is_null($attribute = $this->template->getAttribute($attr))) {
-				$attribute = $this->template->addAttribute($attr,array('values'=>array($value)));
-				$attribute->justModified();
+			if ($value !== false)
+				if (is_null($attribute = $this->template->getAttribute($attr))) {
+					$attribute = $this->template->addAttribute($attr,array('values'=>array($value)));
+					$attribute->justModified();
 
-			} else
-				if ($attribute->hasBeenModified())
-					$attribute->addValue($value);
-				else
-					$attribute->setValue(array($value));
+				} else
+					if ($attribute->hasBeenModified())
+						$attribute->addValue($value);
+					else
+						$attribute->setValue(array($value));
 		}
 	}
 
@@ -440,9 +441,12 @@ class ImportLDIF extends Import {
 
 			# Get the current line with the action
 			$currentLine = array_shift($lines);
-			$attrvalue = $this->getAttrValue($currentLine);
+			$attrvalue = $this->getAttrValue($currentLine, false);
 			$action_attribute = $attrvalue[0];
 			$action_attribute_value = $attrvalue[1];
+
+			if ($action_attribute_value === false)
+				return false;
 
 			if (! in_array($action_attribute,array('add','delete','replace')))
 				return $this->error(_('Missing modify command add, delete or replace'),array_merge(array($currentLine),$lines));
@@ -485,15 +489,16 @@ class ImportLDIF extends Import {
 
 				# If there is a valid line
 				if (preg_match('/:/',$currentLine)) {
-					$attrvalue = $this->getAttrValue($currentLine);
+					$attrvalue = $this->getAttrValue($currentLine, true, true);
 					$attr = $attrvalue[0];
 					$attribute_value_part = $attrvalue[1];
+
+					if ($attribute_value_part === false)
+						return false;
 
 					# Check that it correspond to the one specified before
 					if ($attr == $action_attribute_value) {
 						# Get the value part of the attribute
-						$attribute_value = $this->getAttributeValue($attribute_value_part);
-
 						$attribute = $this->template->getAttribute($attr);
 
 						# This should be a add/replace operation
@@ -571,12 +576,20 @@ class ImportLDIF extends Import {
 			if (preg_match('/^newrdn:(:?)/',$currentLine)) {
 
 				$attrvalue = $this->getAttrValue($currentLine);
+
+				if ($attrvalue[1] === false)
+					return false;
+
 				$attrs['newrdn'] = $attrvalue[1];
 
 				$currentLine = array_shift($lines);
 
 				if (preg_match('/^deleteoldrdn:[ ]*(0|1)/',$currentLine)) {
 					$attrvalue = $this->getAttrValue($currentLine);
+
+					if ($attrvalue[1] === false)
+						return false;
+
 					$attrs['deleteoldrdn'] = $attrvalue[1];
 
 					# Switch to the possible new superior attribute
@@ -586,6 +599,10 @@ class ImportLDIF extends Import {
 						# then the possible new superior attribute
 						if (preg_match('/^newsuperior:/',$currentLine)) {
 							$attrvalue = $this->getAttrValue($currentLine);
+
+							if ($attrvalue[1] === false)
+								return false;
+
 							$attrs['newsuperior'] = $attrvalue[1];
 
 						} else
