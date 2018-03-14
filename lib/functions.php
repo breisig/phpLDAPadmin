@@ -612,7 +612,9 @@ function error($msg,$type='note',$redirect=null,$fatal=false,$backtrace=false) {
 				_('Function'),$line['function']);
 
 			if (isset($line['args'])) {
-				$display = strlen(serialize($line['args'])) < 50 ? htmlspecialchars(serialize($line['args'])) : htmlspecialchars(substr(serialize($line['args']),0,50)).'...<TRUNCATED>';
+				foreach($line['args'] as &$v) if(is_callable($v)) $v = '<closure>';
+				$_serargs = serialize($line['args']);
+				$display = strlen($_serargs) < 50 ? htmlspecialchars($_serargs) : htmlspecialchars(substr($_serargs,0,50)).'...<TRUNCATED>';
 				$_SESSION['backtrace'][$error]['args'] = $line['args'];
 				if (file_exists(LIBDIR.'../tools/unserialize.php'))
 					$body .= sprintf('&nbsp;(<a href="%s?index=%s" onclick="target=\'backtrace\';">%s</a>)',
@@ -2116,8 +2118,6 @@ function password_types() {
 		'smd5'=>'smd5',
 		'ssha'=>'ssha',
 		'sha512'=>'sha512',
-		'sha256crypt'=>'sha256crypt',
-		'sha512crypt'=>'sha512crypt',
 	);
 }
 
@@ -2126,11 +2126,10 @@ function password_types() {
  *
  * @param string The password to hash in clear text.
  * @param string Standard LDAP encryption type which must be one of
- *        crypt, ext_des, md5crypt, blowfish, md5, sha, smd5, ssha, sha512,
- *        sha256crypt, sha512crypt, or clear.
+ *        crypt, ext_des, md5crypt, blowfish, md5, sha, smd5, ssha, sha512, or clear.
  * @return string The hashed password.
  */
-function pla_password_hash($password_clear,$enc_type) {
+function password_hash_pla($password_clear,$enc_type) {
 	if (DEBUG_ENABLED && (($fargs=func_get_args())||$fargs='NOARGS'))
 		debug_log('Entered (%%)',1,0,__FILE__,__LINE__,__METHOD__,$fargs);
 
@@ -2230,20 +2229,6 @@ function pla_password_hash($password_clear,$enc_type) {
 
 			break;
 
-		case 'sha256crypt':
-			if (! defined('CRYPT_SHA256') || CRYPT_SHA256 == 0)
-				error(_('Your system crypt library does not support sha256crypt encryption.'),'error','index.php');
-			$new_value = sprintf('{CRYPT}%s',crypt($password_clear,'$5$'.random_salt(8)));
-
-			break;
-
-		case 'sha512crypt':
-			if (! defined('CRYPT_SHA512') || CRYPT_SHA512 == 0)
-				error(_('Your system crypt library does not support sha512crypt encryption.'),'error','index.php');
-			$new_value = sprintf('{CRYPT}%s',crypt($password_clear,'$6$'.random_salt(8)));
-
-			break;
-
 		case 'clear':
 		default:
 			$new_value = $password_clear;
@@ -2335,7 +2320,7 @@ function password_check($cryptedpassword,$plainpassword,$attribute='userpassword
 
 		# SHA crypted passwords
 		case 'sha':
-			if (strcasecmp(pla_password_hash($plainpassword,'sha'),'{SHA}'.$cryptedpassword) == 0)
+			if (strcasecmp(password_hash_pla($plainpassword,'sha'),'{SHA}'.$cryptedpassword) == 0)
 				return true;
 			else
 				return false;
@@ -2344,7 +2329,7 @@ function password_check($cryptedpassword,$plainpassword,$attribute='userpassword
 
 		# MD5 crypted passwords
 		case 'md5':
-			if( strcasecmp(pla_password_hash($plainpassword,'md5'),'{MD5}'.$cryptedpassword) == 0)
+			if( strcasecmp(password_hash_pla($plainpassword,'md5'),'{MD5}'.$cryptedpassword) == 0)
 				return true;
 			else
 				return false;
@@ -2409,7 +2394,7 @@ function password_check($cryptedpassword,$plainpassword,$attribute='userpassword
 
 		# SHA512 crypted passwords
 		case 'sha512':
-			if (strcasecmp(pla_password_hash($plainpassword,'sha512'),'{SHA512}'.$cryptedpassword) == 0)
+			if (strcasecmp(password_hash_pla($plainpassword,'sha512'),'{SHA512}'.$cryptedpassword) == 0)
 				return true;
 			else
 				return false;
@@ -2582,22 +2567,14 @@ function dn_unescape($dn) {
 		$a = array();
 
 		foreach ($dn as $key => $rdn)
-			$a[$key] = preg_replace_callback('/\\\([0-9A-Fa-f]{2})/',
-				function ($r) {
-					return chr(hexdec($r[1]));
-				},
-				$rdn
-			);
+			//$a[$key] = preg_replace('/\\\([0-9A-Fa-f]{2})/e',"''.chr(hexdec('\\1')).''",$rdn);
+			$a[$key] = preg_replace_callback('/\\\([0-9A-Fa-f]{2})/',function($matches){return chr(hexdec($matches[1]));},$rdn);
 
 		return $a;
 
 	} else {
-		return preg_replace_callback('/\\\([0-9A-Fa-f]{2})/',
-			function ($r) {
-				return chr(hexdec($r[1]));
-			},
-			$dn
-		);
+		//return preg_replace('/\\\([0-9A-Fa-f]{2})/e',"''.chr(hexdec('\\1')).''",$dn);
+		return preg_replace_callback('/\\\([0-9A-Fa-f]{2})/',function($matches){return chr(hexdec($matches[1]));},$dn);
 	}
 }
 
@@ -2631,7 +2608,12 @@ function get_href($type,$extra_info='') {
 		case 'forum':
 			return sprintf('%s/mailarchive/forum.php?forum_name=%s',$sf,$forum_id);
 		case 'logo':
-			return isset($_SESSION) && ! $_SESSION[APPCONFIG]->getValue('appearance','remoteurls') ? '' : sprintf('//sflogo.sourceforge.net/sflogo.php?group_id=%s&amp;type=10',$group_id);
+			if (! isset($_SERVER['HTTPS']) || strtolower($_SERVER['HTTPS']) != 'on')
+				$proto = 'http';
+			else
+				$proto = 'https';
+
+			return isset($_SESSION) && ! $_SESSION[APPCONFIG]->getValue('appearance','remoteurls') ? '' : sprintf('%s://sflogo.sourceforge.net/sflogo.php?group_id=%s&amp;type=10',$proto,$group_id);
 		case 'sf':
 			return sprintf('%s/projects/phpldapadmin',$sf);
 		case 'web':

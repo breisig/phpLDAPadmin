@@ -287,7 +287,7 @@ class PageRender extends Visitor {
 						break;
 
 					default:
-						$vals[$i] = pla_password_hash($passwordvalue,$enc);
+						$vals[$i] = password_hash_pla($passwordvalue,$enc);
 				}
 
 				$vals = array_unique($vals);
@@ -957,7 +957,7 @@ class PageRender extends Visitor {
 		if (trim($val))
 			$enc_type = get_enc_type($val);
 		else
-			$enc_type = $server->getValue('appearance','pla_password_hash');
+			$enc_type = $server->getValue('appearance','password_hash');
 
 		$obfuscate_password = obfuscate_password_display($enc_type);
 
