@@ -388,6 +388,10 @@ class Template extends xmlTemplate {
 						if (! $_FILES[$key]['size'][$attr][$index])
 							continue;
 
+						# Ignore deleted values
+						if (!empty($_REQUEST['deleted_values'][$attr][$index]))
+							continue;
+
 						if (! is_uploaded_file($_FILES[$key]['tmp_name'][$attr][$index])) {
 							if (isset($_FILES[$key]['error'][$attr][$index]))
 								switch($_FILES[$key]['error'][$attr][$index]) {
@@ -443,14 +447,26 @@ class Template extends xmlTemplate {
 					if (count($new_values)) {
 						$attribute = $this->getAttribute($attr);
 
-						if (is_null($attribute))
+						if (is_null($attribute)) {
 							$attribute = $this->addAttribute($attr,array('values'=>$new_values));
-						else
-							foreach ($new_values as $value)
-								$attribute->addValue($value);
-
-						$attribute->justModified();
+							$attribute->justModified();
+						} else
+							foreach ($new_values as $index => $value)
+								$attribute->addValue($value, $index);
 					}
+				}
+
+			# Delete binary values.
+			if (isset($_REQUEST['deleted_values']))
+				foreach ($_REQUEST['deleted_values'] as $attr => $values) {
+					$attribute = $this->getAttribute($attr);
+
+					if (!$attribute)
+						continue;
+
+					foreach ($values as $index => $details)
+						if (!empty($details))
+							$attribute->delValue($index);
 				}
 		}
 

@@ -495,7 +495,9 @@ class ExportLDIF extends Export {
 						$attr = array($attr);
 
 					foreach ($attr as $value)
-						if (! $this->isSafeAscii($value) || $server->isAttrBinary($key))
+						if ($server->isAttrBinary($key))
+							$output .= $this->multiLineDisplay(sprintf('%s;binary:: %s',$key,base64_encode($value)));
+						else if (! $this->isSafeAscii($value))
 							$output .= $this->multiLineDisplay(sprintf('%s:: %s',$key,base64_encode($value)));
 						else
 							$output .= $this->multiLineDisplay(sprintf('%s: %s',$key,$value));

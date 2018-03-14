@@ -355,7 +355,7 @@ class ldap_pla extends ldap {
 			return false;
 
 		if (run_hook('pre_entry_create',array('server_id'=>$this->index,'method'=>$method,'dn'=>$dn,'attrs'=>$entry_array))) {
-			$result = @ldap_add($this->connect($method),dn_escape($dn),$entry_array);
+			$result = @ldap_add($this->connect($method),dn_escape($dn),$this->setBinary($entry_array));
 
 			if ($result) {
 				# Update the tree
@@ -502,7 +502,7 @@ class ldap_pla extends ldap {
 			return false;
 
 		if (run_hook('pre_entry_modify',array('server_id'=>$this->index,'method'=>$method,'dn'=>$dn,'attrs'=>$attrs))) {
-			$result = @ldap_modify($this->connect($method),$dn,$attrs);
+			$result = @ldap_modify($this->connect($method),$dn,$this->setBinary($attrs));
 
 			if ($result) {
 				run_hook('post_entry_modify',array('server_id'=>$this->index,'method'=>$method,'dn'=>$dn,'attrs'=>$attrs));

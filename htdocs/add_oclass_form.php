@@ -69,7 +69,7 @@ if (count($ldap['attrs']['need']) > 0) {
 
 	echo '<br /><br />';
 
-	echo '<form action="cmd.php" method="post" id="entry_form">';
+	echo '<form action="cmd.php" method="post" enctype="multipart/form-data" id="entry_form">';
 	echo '<div>';
 
 	if ($_SESSION[APPCONFIG]->getValue('confirm','update'))
