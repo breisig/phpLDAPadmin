@@ -102,7 +102,7 @@ function display_pla_parse_error($request) {
 	printf('<tr><td><b>%s</b>:</td><td>%s</td></tr>',_('Line'),$request->error['line']);
 	printf('<tr><td colspan=2><b>%s</b>:</td></tr>',_('Data'));
 
-	foreach ($request->error['data'] as $line)
+	foreach ((array) $request->error['data'] as $line)
 		printf('<tr><td>&nbsp;</td><td>%s</td></tr>',$line);
 
 	echo '</table>';
