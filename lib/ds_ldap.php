@@ -1133,9 +1133,6 @@ class ldap extends DS {
   /**
    * Parse a DN and unescape any special characters
    */
-        private static unescapeDN_helper($m) {
-    return chr(hexdec($m[1]));
-        }
   private function unescapeDN($dn) {
     if (DEBUG_ENABLED && (($fargs=func_get_args())||$fargs='NOARGS'))
       debug_log('Entered (%%)',17,0,__FILE__,__LINE__,__METHOD__,$fargs);
@@ -1144,13 +1141,13 @@ class ldap extends DS {
       $a = array();
       foreach ($dn as $key => $rdn) {
         $a[$key] = preg_replace_callback('/\\\([0-9A-Fa-f]{2})/',
-          unescapeDN_helper, $rdn);
+          function($m) { return "''.chr(hexdec('${m[1]}')).''"; }, $rdn);
       }
       return $a;
 
     } else {
       return preg_replace_callback('/\\\([0-9A-Fa-f]{2})/',
-        unescapeDN_helper, $dn);
+        function($m) { return "''.chr(hexdec('${m[1]}')).''"; }, $dn);
     }
   }
 
