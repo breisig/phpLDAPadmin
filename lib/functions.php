@@ -21,6 +21,7 @@ define('TMPLDIR',sprintf('%s/',realpath(LIBDIR.'../templates/')));
 define('DOCDIR',sprintf('%s/',realpath(LIBDIR.'../doc/')));
 define('HOOKSDIR',sprintf('%s/',realpath(LIBDIR.'../hooks/')));
 define('JSDIR','js/');
+define('SESSION_CIPHER','aes-256-gcm');
 
 /**
  * Supplimental functions
@@ -747,9 +748,11 @@ function blowfish_encrypt($data,$secret=null) {
   if (! trim($secret))
     return $data;
 
-  if (! empty($data) && function_exists('openssl_encrypt') && in_array('bf-ecb', openssl_get_cipher_methods())) {
-    $keylen = openssl_cipher_iv_length('bf-ecb') * 2;
-    return openssl_encrypt($data, 'bf-ecb', substr($secret,0,$keylen));
+  if (! empty($data) && function_exists('openssl_encrypt') && in_array(SESSION_CIPHER, openssl_get_cipher_methods())) {
+    $iv = openssl_random_pseudo_bytes(openssl_cipher_iv_length(SESSION_CIPHER));
+    $keylen = openssl_cipher_iv_length(SESSION_CIPHER) * 2;
+    $encrypted = openssl_encrypt($data, SESSION_CIPHER, substr($secret,0,$keylen), $options=0, $iv, $tag);
+    return base64_encode($encrypted . '::' . $iv . '::' . $tag);
   }
 
   if (function_exists('mcrypt_module_open') && ! empty($data)) {
@@ -808,9 +811,10 @@ function blowfish_decrypt($encdata,$secret=null) {
   if (! trim($secret))
     return $encdata;
 
-  if (! empty($encdata) && function_exists('openssl_encrypt') && in_array('bf-ecb', openssl_get_cipher_methods())) {
-    $keylen = openssl_cipher_iv_length('bf-ecb') * 2;
-    return trim(openssl_decrypt($encdata, 'bf-ecb', substr($secret,0,$keylen)));
+  if (! empty($encdata) && function_exists('openssl_encrypt') && in_array(SESSION_CIPHER, openssl_get_cipher_methods())) {
+    $keylen = openssl_cipher_iv_length(SESSION_CIPHER) * 2;
+    list($encryptedData, $iv, $tag) = explode('::', base64_decode($encdata), 3);
+    return trim(openssl_decrypt($encryptedData, SESSION_CIPHER, substr($secret,0,$keylen), $options=0, $iv, $tag));
   }
 
   if (function_exists('mcrypt_module_open') && ! empty($encdata)) {
@@ -840,6 +844,7 @@ function blowfish_decrypt($encdata,$secret=null) {
   $CACHE[$encdata] = $return;
   return $return;
 }
+
 
 /**
  * String padding
